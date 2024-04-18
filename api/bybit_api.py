@@ -7,6 +7,8 @@ import hmac
 
 from dotenv import load_dotenv
 
+import math
+
 
 load_dotenv()
 
@@ -43,6 +45,7 @@ ENDPOINTS_BYBIT = {
 
         # market
         'get_kline': '/v5/market/kline',
+        'instruments-info': '/v5/market/instruments-info',
 
         # account
         'wallet-balance': '/v5/account/wallet-balance'
@@ -52,7 +55,7 @@ ENDPOINTS_BYBIT = {
 Functions for regular requests
 """
 
-# service functions
+# SERVICE FUNCTIONS
 
 
 def gen_signature_get(params, timestamp):
@@ -67,7 +70,35 @@ def gen_signature_get(params, timestamp):
     return signature
 
 
-# market requests
+def round_price_by_coin_params(price, coin_params):
+    """
+    Returns rounded quantity
+    requires:
+    1. price to round
+    2. coin params in format given by get_instruments_info
+    {'symbol': 'BTCUSDT', 'base_coin_prec': '0.000001', 'price_tick': '0.01'}
+    """
+    price_tick = float(coin_params.get('price_tick'))
+    precision = int(math.log10(1 / price_tick))
+    factor = 10 ** precision
+    return int(price * factor) / factor
+
+
+def round_quantity_by_coin_params(quantity, coin_params):
+    """
+    Returns rounded quantity
+    requires:
+    1. price to round
+    2. coin params in format given by get_instruments_info
+    {'symbol': 'BTCUSDT', 'base_coin_prec': '0.000001', 'price_tick': '0.01'}
+    """
+    quote_coin_prec = float(coin_params.get('base_coin_prec'))
+    precision = int(math.log10(1 / quote_coin_prec))
+    factor = 10 ** precision
+    return int(quantity * factor) / factor
+
+
+# MARKET REQUESTS
 
 def get_klines(category='spot', symbol='BTCUSDT', interval=60, limit=10):
     """
@@ -89,10 +120,39 @@ def get_klines(category='spot', symbol='BTCUSDT', interval=60, limit=10):
     }
 
     response = requests.get(url, params=params)
+    print(response.url)
     return response.json().get('result')  # .get('list')
 
 
-# account requests
+def get_instruments_info(category='spot', symbol='BTCUSDT'):
+    """
+    Returns info on pair(s) from market
+    On default:
+    category = 'spot', also linear, inverse, option, spot
+    symbol = 'BTCUSDT', not mandatory
+    Retunrs result as
+    {'symbol': 'BTCUSDT', 'base_coin_prec': '0.000001', 'price_tick': '0.01'}
+    """
+    url = MAIN_URL + ENDPOINTS_BYBIT.get('instruments-info')
+
+    params = {
+        'category': category,
+        'symbol': symbol,
+    }
+
+    response = requests.get(url, params=params)
+    print(response.url)
+    result = response.json().get('result').get('list')[0]
+    # print(result)
+    dic = {
+        'symbol': result.get('symbol'),
+        'base_coin_prec': result.get('lotSizeFilter').get('basePrecision'),
+        'price_tick': result.get('priceFilter').get('tickSize'),
+    }
+    return dic
+
+
+# ACCOUNT REQUESTS
 
 def get_wallet_balance(coin=None, accountType='UNIFIED'):
     """
@@ -132,4 +192,12 @@ Functions for ASYNCIO requests
 TEST ZONE
 """
 if __name__ == '__main__':
-    print(get_wallet_balance(coin='BTC'))
+
+    params = get_instruments_info()
+    print(params)
+
+    quantity = 0.12547896
+    price = 75000.55584752145
+
+    print(round_quantity_by_coin_params(quantity, params))
+    print(round_price_by_coin_params(price, params))
