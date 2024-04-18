@@ -42,6 +42,7 @@ ENDPOINTS_BYBIT = {
         'server_time': '/v5/market/time',
 
         # market
+        'get_kline': '/v5/market/kline',
 
         # account
         'wallet-balance': '/v5/account/wallet-balance'
@@ -64,6 +65,31 @@ def gen_signature_get(params, timestamp):
         bytes(SECRET_KEY, "utf-8"), param_str.encode("utf-8"), hashlib.sha256
         ).hexdigest()
     return signature
+
+
+# market requests
+
+def get_klines(category='spot', symbol='BTCUSDT', interval=60, limit=10):
+    """
+    Returns last klines from market
+    On default:
+    category = 'spot', also available spot,linear,inverse
+    symbol = 'BTCUSDT'
+    interval = 60, , also available  # 1,3,5,15,30,60,120,240,360,720,D,M,W
+    limit = 10  # , also available[1, 1000]
+
+    """
+    url = MAIN_URL + ENDPOINTS_BYBIT.get('get_kline')
+
+    params = {
+        'category': category,
+        'symbol': symbol,
+        'interval': interval,
+        'limit': limit,
+    }
+
+    response = requests.get(url, params=params)
+    return response.json().get('result')  # .get('list')
 
 
 # account requests
