@@ -4,7 +4,8 @@ import traceback
 import aiohttp
 
 
-class Socket_conn_Bybit:
+class SocketBybit():
+
     def __init__(self, url, params=None):
         self.url = url
         self.params = params
@@ -61,5 +62,5 @@ if __name__ == '__main__':
         'orderbook.1.AXSUSDT',
     ]
 
-    socket = Socket_conn_Bybit(url_spot, topics)
+    socket = SocketBybit(url_spot, topics)
     asyncio.run(socket.connect())
