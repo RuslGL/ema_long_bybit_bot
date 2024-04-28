@@ -286,5 +286,6 @@ Functions for ASYNCIO requests
 TEST ZONE
 """
 if __name__ == '__main__':
-
-    print(get_pair_budget(base_coin='BTC', symbol='BTCUSDT'))
+    pass
+    # print(get_wallet_balance(coin=None, accountType='UNIFIED'))
+    # print(get_pair_budget(base_coin='BTC', symbol='BTCUSDT'))
