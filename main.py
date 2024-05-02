@@ -55,7 +55,7 @@ class TradeSocketBybit(SocketBybit):
         data = json.loads(msg.data)
         if 'data' in data:
             if data.get('topic') == 'kline.1.BTCUSDT':
-                if data.get('data')[0].get('confirm') == True:
+                if data.get('data')[0].get('confirm'):
                     data = data.get('data')[0]
                     new_candle = []
                     new_candle.extend([
