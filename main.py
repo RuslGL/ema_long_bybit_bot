@@ -1,20 +1,39 @@
 import asyncio
-from api.bybit_api import get_instruments_info, get_pair_budget, get_klines
+# from api.bybit_api import get_instruments_info, get_pair_budget, get_klines
+from api.bybit_api import (get_instruments_info_asc,
+                           get_pair_budget_asc, get_klines_asc)
 from api.ws_asyncio import SocketBybit
 from utils import klines_to_df, process_new_kline
 import json
 
 
-# BASE VARIABLES
+# BASE CONSTANT VARIABLES
 SYMBOL = 'BTCUSDT'
 BASE_COIN = 'BTC'
 KLINE_INTERVAL = 1
 RISK_TOLERANCE = 0.75
 STOP_LOSS_LIMIT = 0.15
-KLINES_LENGTH = 100
+KLINES_LENGTH = 11
 
-# ###### ASYNCIO REQUIRED #######
-budget = get_pair_budget(BASE_COIN, SYMBOL)
+
+# PRE START CALCULATIONS
+async def get_variables():
+    tasks = [asyncio.create_task(get_pair_budget_asc(BASE_COIN, SYMBOL)),
+             asyncio.create_task(get_instruments_info_asc(symbol=SYMBOL)),
+             asyncio.create_task(get_klines_asc(symbol=SYMBOL,
+                                                interval=KLINE_INTERVAL,
+                                                limit=KLINES_LENGTH)),]
+    return await asyncio.gather(*tasks)
+
+result = asyncio.run(get_variables())
+
+
+budget = result[0]
+symbol_params = result[1]
+raw_klines_store = result[2].get('result').get('list')
+
+
+# BUDGET RESTRICTIONS
 start_total_budget = budget.get('total_budget')
 stop_budget = start_total_budget * RISK_TOLERANCE
 
@@ -25,23 +44,10 @@ ema_long = 15
 
 
 # TRADE VARIABLES
-# {'symbol': 'BTCUSDT', 'base_coin_prec': 1e-06,
-# 'price_tick': 0.01, 'minOrderQty': 4.8e-05}
-# ###### ASYNCIO REQUIRED #######
-symbol_params = get_instruments_info(symbol=SYMBOL)
-
 quantity_tick = symbol_params.get('base_coin_prec')
 price_tick = symbol_params.get('price_tick')
 min_quantity = symbol_params.get('minOrderQty')
-
-stop_loss = None  # open stop loss orders
-
-# ###### ASYNCIO REQUIRED #######
-raw_klines_store = get_klines(
-    symbol=SYMBOL, interval=KLINE_INTERVAL, limit=KLINES_LENGTH).get('list')
 df_klines_store = klines_to_df(raw_klines_store)
-
-# print(df_klines_store)
 
 
 class TradeSocketBybit(SocketBybit):
