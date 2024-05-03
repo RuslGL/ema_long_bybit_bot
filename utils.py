@@ -29,6 +29,6 @@ def process_new_kline(df_klines_store, new_kline):
     new_kline[1:] = [float(value) for value in new_kline[1:]]
     df_klines_store.loc[new_kline[0]] = new_kline[1:]
     df_klines_store = df_klines_store.sort_index(ascending=True)
-    # problem here, at first step length -1
+    # length -1 here if you need 500 klines KLINES_LENGTH = 501
     df_klines_store = df_klines_store.iloc[1:]
     return df_klines_store

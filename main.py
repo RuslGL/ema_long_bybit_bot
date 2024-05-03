@@ -1,10 +1,12 @@
 import asyncio
-# from api.bybit_api import get_instruments_info, get_pair_budget, get_klines
 from api.bybit_api import (get_instruments_info_asc,
                            get_pair_budget_asc, get_klines_asc)
 from api.ws_asyncio import SocketBybit
 from utils import klines_to_df, process_new_kline
+from signal_strategy import define_ema_signal
+
 import json
+import time
 
 
 # BASE CONSTANT VARIABLES
@@ -13,7 +15,7 @@ BASE_COIN = 'BTC'
 KLINE_INTERVAL = 1
 RISK_TOLERANCE = 0.75
 STOP_LOSS_LIMIT = 0.15
-KLINES_LENGTH = 11
+KLINES_LENGTH = 10
 
 
 # PRE START CALCULATIONS
@@ -22,7 +24,7 @@ async def get_variables():
              asyncio.create_task(get_instruments_info_asc(symbol=SYMBOL)),
              asyncio.create_task(get_klines_asc(symbol=SYMBOL,
                                                 interval=KLINE_INTERVAL,
-                                                limit=KLINES_LENGTH)),]
+                                                limit=KLINES_LENGTH+1)),]
     return await asyncio.gather(*tasks)
 
 result = asyncio.run(get_variables())
@@ -71,12 +73,25 @@ class TradeSocketBybit(SocketBybit):
                     df_klines_store = process_new_kline(
                         df_klines_store, new_candle)
 
+                    # ### SIGNAL LOGIC STARTS HERE ###
+                    start_time = time.time()
+                    signal = define_ema_signal(ema_short, ema_long,
+                                               df_klines_store,
+                                               print_result=True)
+                    print(signal)
+                    # ### SIGNAL LOGIC STOPS HERE ###
+
                     # ### TRADE LOGIC STARTS HERE ###
-                    df_klines_store.to_csv('last_klines.csv')
-                    print(df_klines_store)
+                    if signal == 0:
+                        print('No signal')
+                    elif signal == 1:
+                        print('Buy')
+                    else:
+                        print('Sell')
+                    execution_time = time.time() - start_time
+                    print(f'execution time = {execution_time}')
 
                     # ### TRADE LOGIC STOPS HERE ###
-        # await asyncio.sleep(20)
 
 
 if __name__ == '__main__':
