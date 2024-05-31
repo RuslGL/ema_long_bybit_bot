@@ -20,26 +20,41 @@ IF_TEST = 1
 
 MAIN_URL = None
 
+
 MAIN_TEST = 'https://api-testnet.bybit.com'
 MAIN_REAl = 'https://api.bybit.com'
 
 
+WS_SPOT = None
+
+WS_SPOT_TEST = 'wss://stream-testnet.bybit.com/v5/public/spot'
+WS_SPOT_REAL = 'wss://stream.bybit.com/v5/public/spot'
+
+
 if IF_TEST:
+    print('THIS IS TEST ONLY')
 
     MAIN_URL = MAIN_TEST
     API_KEY = str(os.getenv('test_01_bybit_api_key'))
     SECRET_KEY = str(os.getenv('test_01_bybit_secret_key'))
+    WS_SPOT = WS_SPOT_TEST
 
 else:
+    print('BE CAREFUL REAL MARKET IN FORCE!!!')
+
     API_KEY = str(os.getenv('bybit_api_key'))
     SECRET_KEY = str(os.getenv('bybit_secret_key'))
 
     MAIN_URL = MAIN_REAl
+    WS_SPOT = WS_SPOT_REAL
 
 
 ENDPOINTS_BYBIT = {
         # trade
         'place_order': '/v5/order/create',
+        'cancel_order': '/v5/order/cancel',
+        'open_orders': '/v5/order/realtime',
+
 
         # market
         'server_time': '/v5/market/time',
@@ -55,7 +70,8 @@ ENDPOINTS_BYBIT = {
 Functions for regular requests
 """
 
-# SERVICE FUNCTIONS
+
+# SIGNATURE FUNCTIONS
 
 
 def gen_signature_get(params, timestamp):
@@ -70,13 +86,49 @@ def gen_signature_get(params, timestamp):
     return signature
 
 
-def gen_signature_post(params, timestamp):
-    param_str = timestamp + API_KEY + '5000' + json.dumps(params)
-    signature = hmac.new(
-        bytes(SECRET_KEY, "utf-8"), param_str.encode("utf-8"), hashlib.sha256
-        ).hexdigest()
-    return signature
+def get_signature_post(data, timestamp, recv_wind):
+    """
+    Returns signature for post request
+    """
+    query = f'{timestamp}{API_KEY}{recv_wind}{data}'
+    return hmac.new(SECRET_KEY.encode('utf-8'), query.encode('utf-8'),
+                    hashlib.sha256).hexdigest()
 
+
+async def post_data(url, data, headers):
+    """
+    Makes asincio post request (used in post_bybit_signed)
+    """
+    async with aiohttp.ClientSession() as session:
+        async with session.post(url, data=data, headers=headers) as response:
+            return await response.json()
+
+
+async def post_bybit_signed(endpoint, **kwargs):
+    """
+    Sends signed post requests with aiohttp
+    """
+    timestamp = int(time.time() * 1000)
+    recv_wind = 5000
+    data = json.dumps({key: str(value) for key, value in kwargs.items()})
+    signature = get_signature_post(data, timestamp, recv_wind)
+    headers = {
+        'Accept': 'application/json',
+        'X-BAPI-SIGN': signature,
+        'X-BAPI-API-KEY': API_KEY,
+        'X-BAPI-TIMESTAMP': str(timestamp),
+        'X-BAPI-RECV-WINDOW': str(recv_wind)
+    }
+
+    url = MAIN_URL + ENDPOINTS_BYBIT[endpoint]
+
+    return await post_data(
+        url,
+        data,
+        headers)
+
+
+# SERVICE FUNCTIONS
 
 def round_price_by_coin_params(price, coin_params):
     """
@@ -106,40 +158,6 @@ def round_quantity_by_coin_params(quantity, coin_params):
     precision = int(math.log10(1 / quote_coin_prec))
     factor = 10 ** precision
     return int(quantity * factor) / factor
-
-
-# TRADE ORDERS
-
-def place_market_order(symbol, side, quantity, category='spot'):
-    """
-    Creates matket order
-    Requires:
-    symbol in format "BTCUSDT", quantity and
-    side Buy, Sell
-    By  default on spot, available spot, linear, inverse, option
-    """
-
-    params = {
-        'orderType': 'Market',
-        'category': category,
-        'symbol': symbol,
-        'side': side,
-        'marketUnit': 'baseCoin',
-        'qty': str(quantity),
-    }
-
-    url = MAIN_URL + ENDPOINTS_BYBIT.get('place_order')
-    timestamp = str(int(time.time() * 1000))
-
-    header = {
-        "X-BAPI-API-KEY": API_KEY,
-        "X-BAPI-TIMESTAMP": timestamp,
-        "X-BAPI-RECV-WINDOW": "5000"
-    }
-
-    header["X-BAPI-SIGN"] = gen_signature_post(params, timestamp)
-    return requests.post(
-        url=url, headers=header, data=json.dumps(params)).json()
 
 
 # SIMPLE MARKET REQUESTS
@@ -196,7 +214,7 @@ def get_instruments_info(category='spot', symbol='BTCUSDT'):
         'minOrderQty': float(result.get('lotSizeFilter').get('minOrderQty')),
     }
     return dic
-
+    
 
 def get_pair_price(symbol, category='spot'):
     """
@@ -416,6 +434,92 @@ async def get_pair_budget_asc(base_coin, symbol):
 
     return result
 
+# ##########################################
+
+# ASYNCIO TRADE REQUESTS
+
+
+async def place_market_order_sell_spot(symbol, quantity):
+
+    result = await post_bybit_signed('place_order', orderType='Market',
+                                     category='spot', symbol=symbol,
+                                     side='Sell', qty=quantity,
+                                     marketUnit='baseCoin')
+    return result
+
+
+async def place_market_order_buy_spot(symbol, quantity):
+
+    result = await post_bybit_signed('place_order', orderType='Market',
+                                     category='spot', symbol=symbol,
+                                     side='Buy', qty=quantity,
+                                     marketUnit='baseCoin')
+    return result
+
+
+async def place_conditional_order_sell_spot(symbol, quantity,
+                                            triggerPrice, price):
+
+    result = await post_bybit_signed('place_order', orderType='Limit',
+                                     category='spot', symbol=symbol,
+                                     side='Sell', qty=quantity,
+                                     price=price, triggerPrice=triggerPrice,
+                                     orderFilter='StopOrder')
+    return result
+
+
+async def place_conditional_order_buy_spot(symbol, quantity,
+                                           triggerPrice, price):
+
+    result = await post_bybit_signed('place_order', orderType='Limit',
+                                     category='spot', symbol=symbol,
+                                     side='Buy', qty=quantity,
+                                     price=price, triggerPrice=triggerPrice,
+                                     orderFilter='StopOrder')
+    return result
+
+
+async def cancel_spot_order(order_id, symbol):
+    """
+    Cancells spot order by order_id and pair symbol 
+    """
+    result = await post_bybit_signed('cancel_order', category='spot',
+                                     symbol=symbol, orderId=order_id)
+    return result
+
+
+async def get_open_spot_orders(symbol):
+    """
+    Returns list of open spot ordersId
+    Input - pair symbol
+    """
+
+    url = MAIN_URL + ENDPOINTS_BYBIT.get('open_orders')
+
+    timestamp = str(int(time.time() * 1000))
+
+    headers = {
+        'X-BAPI-API-KEY': API_KEY,
+        'X-BAPI-TIMESTAMP': timestamp,
+        'X-BAPI-RECV-WINDOW': '5000'
+    }
+
+    params = {
+        'symbol': symbol,
+        'category': 'spot'
+    }
+
+    headers['X-BAPI-SIGN'] = gen_signature_get(params, timestamp)
+
+    async with aiohttp.ClientSession() as session:
+        async with session.get(
+                url, headers=headers, params=params) as response:
+            data = await response.json()
+        data = await response.json()
+        data = data.get('result').get('list')
+        result = [element.get('orderId') for element in data]
+    return result
+
 
 """
 TEST ZONE
@@ -463,16 +567,3 @@ if __name__ == '__main__':
                                           limit=KLINES_LENGTH)),
                        ]
         return await asyncio.gather(*my_requests)
-
-    start_time = time.time()
-    result = asyncio.run(get_variables_two())
-    execution_time = time.time() - start_time
-    print(f'Execution time without get pair budger = {execution_time}')
-
-    start_time = time.time()
-    budget = get_pair_budget(BASE_COIN, SYMBOL)
-    symbol_params = get_instruments_info(symbol=SYMBOL)
-    raw_klines_store = get_klines(symbol=SYMBOL,
-                                  interval=KLINE_INTERVAL, limit=KLINES_LENGTH)
-    execution_time = time.time() - start_time
-    print(f'Execution time without async = {execution_time}')
