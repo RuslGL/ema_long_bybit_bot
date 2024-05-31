@@ -22,6 +22,10 @@ from signal_strategy import define_ema_signal
 import json
 from aiohttp.client_exceptions import ClientConnectorError
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 # TELEGRAM BOT VARIABLES
 bot_token = str(os.getenv('token_Test_algo_one_bot'))
 chat_id = str(os.getenv('chat_id'))

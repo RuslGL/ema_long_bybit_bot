@@ -8,8 +8,9 @@ import requests
 import time
 
 import aiohttp
-# from dotenv import load_dotenv
+from dotenv import load_dotenv
 
+load_dotenv()
 
 """
 SETTINGS
