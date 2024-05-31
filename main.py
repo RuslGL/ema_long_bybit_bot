@@ -63,7 +63,7 @@ try:
 
     # STRATEGY INPUT VARIABLES
     ema_short = 5
-    ema_long = 25
+    ema_long = 190
 
     # TRADE VARIABLES
     quantity_tick = symbol_params.get('base_coin_prec')
