@@ -1,4 +1,9 @@
 import asyncio
+import os
+
+from aiogram import Bot, Dispatcher
+from aiogram.enums import ParseMode
+
 from api.bybit_api import (get_instruments_info_asc,
                            get_pair_budget_asc, get_klines_asc,
                            place_market_order_sell_spot,
@@ -15,18 +20,22 @@ from utils import (klines_to_df, process_new_kline, calculate_purchase_volume,
 from signal_strategy import define_ema_signal
 
 import json
-# import time
-
 from aiohttp.client_exceptions import ClientConnectorError
+
+# TELEGRAM BOT VARIABLES
+bot_token = str(os.getenv('token_Test_algo_one_bot'))
+chat_id = str(os.getenv('chat_id'))
+dp = Dispatcher()
 
 # BASE CONSTANT VARIABLES
 SYMBOL = 'BTCUSDT'
 BASE_COIN = 'BTC'
-KLINE_INTERVAL = 60
+KLINE_INTERVAL = 1
 RISK_TOLERANCE = 0.75
 STOP_LOSS_LIMIT = 0.95
 TAKE_PROFIT_RANGE = 1.05
 KLINES_LENGTH = 500
+IF_TAKE_PROFIT = 0
 
 
 # PRE START CALCULATIONS
@@ -50,7 +59,7 @@ try:
 
     # STRATEGY INPUT VARIABLES
     ema_short = 5
-    ema_long = 190
+    ema_long = 25
 
     # TRADE VARIABLES
     quantity_tick = symbol_params.get('base_coin_prec')
@@ -67,15 +76,43 @@ except Exception as e:
 
 
 class TradeSocketBybit(SocketBybit):
-    def __init__(selfself, url, params=None):
+    def __init__(self, url, params=None):
         super().__init__(url, params)
-        global df_klines_store, ema_short, ema_long
+        self.message_queue = asyncio.Queue()
+        self.bot = Bot(token=bot_token, parse_mode=ParseMode.HTML)
+        self.dispatcher = Dispatcher()
+        asyncio.create_task(self.start_bot())
+        asyncio.create_task(self.process_message_queue())
+
+    async def start_bot(self):
+        """
+        Запускает Telegram-бота
+        """
+        await self.dispatcher.start_polling(self.bot)
+
+    async def process_message_queue(self):
+        """
+        Обрабатывает очередь сообщений и отправляет их в Telegram
+        """
+        while True:
+            chat_id, text = await self.message_queue.get()
+            await self.bot.send_message(chat_id, text)
+            self.message_queue.task_done()
+
+    async def send_message(self, chat_id, text):
+        """
+        Отправляет сообщение в указанный чат через бота.
+        """
+        await self.message_queue.put((chat_id, str(text)))
 
     async def on_message(self, ws, msg):
+
         global df_klines_store, in_position, symbol_params, \
             budget, stop_budget, last_price, min_quantity, \
             quantity_tick, tp_sl_list, ema_short, ema_long
+
         data = json.loads(msg.data)
+
         if 'data' in data:
             if data.get('topic') == 'kline.1.BTCUSDT':
                 if data.get('data')[0].get('confirm'):
@@ -108,9 +145,11 @@ class TradeSocketBybit(SocketBybit):
 # ##### tp sl cancellation
 
                     if signal == 1 and in_position == 0:
-                        print('Buy', f'budget={budget}',
-                              f'stop_budget= {stop_budget}')
-
+                        message = (
+                            f'Buy, budget= {budget} stop_budget= {stop_budget}'
+                                    )
+                        print(message)
+                        await self.send_message(chat_id, message)
                         try:
                             result = await get_pair_budget_asc(
                                 BASE_COIN, SYMBOL)
@@ -127,6 +166,7 @@ class TradeSocketBybit(SocketBybit):
                             buy_result = await place_market_order_buy_spot(
                                 SYMBOL, quantity)
                             print(buy_result)
+                            await self.send_message(chat_id, buy_result)
                             if buy_result.get('retMsg') == 'OK':
                                 print('place sl')
                                 in_position = 1
@@ -134,27 +174,29 @@ class TradeSocketBybit(SocketBybit):
                                 sl = round_price(
                                     last_price * STOP_LOSS_LIMIT, price_tick)
                                 sl_price = round_price(sl * 0.99, price_tick)
-                                tp = round_price(
-                                    last_price * TAKE_PROFIT_RANGE, price_tick)
-                                tp_price = round_price(tp * 0.99, price_tick)
+                                # tp = round_price(
+                                #   last_price * TAKE_PROFIT_RANGE, price_tick)
+                                # tp_price = round_price(tp * 0.99, price_tick)
 
                                 tp_sl = [asyncio.create_task(
                                     place_conditional_order_sell_spot(
                                         symbol=SYMBOL, quantity=quantity,
                                         triggerPrice=sl, price=sl_price)),
-                                        asyncio.create_task(
-                                    place_conditional_order_sell_spot(
-                                        symbol=SYMBOL, quantity=quantity,
-                                        triggerPrice=tp, price=tp_price))
+                                    #    asyncio.create_task(
+                                    # place_conditional_order_sell_spot(
+                                    #    symbol=SYMBOL, quantity=quantity,
+                                    #    triggerPrice=tp, price=tp_price))
                                         ]
 
                                 tp_sl_result = await asyncio.gather(*tp_sl)
                                 tp_sl_list = [
                                     tp_sl_result[0].get(
                                         'result').get('orderId'),
-                                    tp_sl_result[1].get(
-                                        'result').get('orderId')]
+                                    # tp_sl_result[1].get(
+                                    #    'result').get('orderId')
+                                    ]
                                 print(tp_sl_list)
+                                await self.send_message(chat_id, tp_sl_list)
                                 result = await get_pair_budget_asc(
                                     BASE_COIN, SYMBOL)
                                 usdt_budget = result.get('budget_usdt')
@@ -163,16 +205,23 @@ class TradeSocketBybit(SocketBybit):
                                 print(f'BTC = {BTC_budget}')
                                 print(f'USDT = {usdt_budget}')
                             else:
-                                print(
-                                    'Не удалось разместить ордер на Покупку!')
+                                message = ('Не удалось разместить \
+                                           ордер на Покупку!')
+                                print(message)
+                                await self.send_message(chat_id, message)
 
                         except Exception:
-                            print(
-                                'Не удалосm разместить market buy по сигналу!')
+                            message = ('Не удалось разместить \
+                                        ордер на Покупку!')
+                            print(message)
+                            await self.send_message(chat_id, message)
 
                     elif signal == -1 and in_position == 1:
-                        print('Sell', f'budget={budget}',
-                              f'stop_budget= {stop_budget}')
+                        message = (f'Sell, budget={budget}',
+                                   f'stop_budget= {stop_budget}')
+                        print(message)
+                        await self.send_message(chat_id, message)
+
                         try:
                             result = await get_pair_budget_asc(
                                 BASE_COIN, SYMBOL)
@@ -183,7 +232,10 @@ class TradeSocketBybit(SocketBybit):
                                 BTC_budget, min_quantity, quantity_tick)
                             print(f'quantity to sell = {quantity}')
                             if quantity == -1:
-                                raise Exception('Недостаточный баланс')
+                                message = 'Недостаточный баланс'
+                                print(message)
+                                await self.send_message(chat_id, message)
+                                raise Exception(message)
                             print('Продаем')
                             sell_result = await place_market_order_sell_spot(
                                 SYMBOL, quantity)
@@ -197,13 +249,17 @@ class TradeSocketBybit(SocketBybit):
                                 print(f'in_position = {in_position}')
                                 print(f'BTC = {BTC_budget}')
                                 print(f'USDT = {usdt_budget}')
+                                await self.send_message(chat_id, 'Sold')
+                                await self.send_message(chat_id, sell_result)
                             else:
-                                print(
-                                    'Не удалось разместить ордер на продажу!')
+                                message = 'Не удалось разместить ордер на продажу!'
+                                print(message)
+                                await self.send_message(chat_id, message)
 
                         except Exception:
-                            print(
-                                'Не удалосm разместить marketsell по сигналу!')
+                            message = 'Не удалось разместить ордер на продажу!'
+                            print(message)
+                            await self.send_message(chat_id, message)
 
                         try:
                             print('Отменяем', tp_sl_list)
@@ -218,7 +274,7 @@ class TradeSocketBybit(SocketBybit):
                         except Exception:
                             print('Не удалось отменить TP_SL')
 
-                    ### Нет сигналов нет позиций
+                    # ## Нет сигналов нет позиций
                     else:
                         result = await get_pair_budget_asc(BASE_COIN, SYMBOL)
                         BTC_budget = result.get('quantity_base_coin')
@@ -228,20 +284,24 @@ class TradeSocketBybit(SocketBybit):
 
                             if len(orders_list) != 0:
                                 print('Начинаем удалять ордеры',  orders_list)
-                                
+
                                 cancelation_tasks = []
                                 for element in orders_list:
-                                    cancelation_tasks.append(asyncio.create_task(cancel_spot_order(element, SYMBOL)))
-                                    
+                                    cancelation_tasks.append(
+                                        asyncio.create_task(
+                                            cancel_spot_order(
+                                                element, SYMBOL)))
+
                                 try:
                                     await asyncio.gather(*cancelation_tasks)
                                     tp_sl_list = []
                                 except Exception:
-                                    print('Проблемы с удалением TP\SL')
+                                    print('Проблемы с удалением TP/SL')
 
-
-                        print('No signal', f'in_position = {in_position}')
-                        print(f'tp_sl_list = {tp_sl_list}')
+                        message = (
+                            f'No signal, in_position = {in_position},\n tp/sl = {tp_sl_list}')
+                        print(message)
+                        await self.send_message(chat_id, message)
 
                     # ### TRADE LOGIC STOPS HERE ###
             # #######################################################
