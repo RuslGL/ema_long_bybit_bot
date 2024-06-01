@@ -1,0 +1,17 @@
+[Unit]
+Description=ema_long_bybit_bot
+After=network.target
+
+[Service]
+ExecStart=/root/projects/ema_long_bybit_bot/venv/bin/python3 main.py
+StandardOutput=append:/var/log/robot.log
+StandardError=append:/var/log/robot.log
+WorkingDirectory=/root/projects/ema_long_bybit_bot
+KillMode=process
+Restart=always
+RestartSec=1
+User=root
+Group=root
+
+[Install]
+WantedBy=multi-user.target

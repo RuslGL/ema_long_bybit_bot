@@ -34,7 +34,7 @@ dp = Dispatcher()
 # BASE CONSTANT VARIABLES
 SYMBOL = 'BTCUSDT'
 BASE_COIN = 'BTC'
-KLINE_INTERVAL = 1
+KLINE_INTERVAL = 60
 RISK_TOLERANCE = 0.75
 STOP_LOSS_LIMIT = 0.95
 TAKE_PROFIT_RANGE = 1.05
@@ -74,6 +74,7 @@ try:
     last_price = None
     tp_sl_list = []
 
+    print(df_klines_store.tail())
 
 except Exception as e:
     print('Проблемы с получением первичных переменных от api', e)
@@ -117,8 +118,10 @@ class TradeSocketBybit(SocketBybit):
 
         data = json.loads(msg.data)
 
+
         if 'data' in data:
-            if data.get('topic') == 'kline.1.BTCUSDT':
+            if data.get('topic') == f'kline.{KLINE_INTERVAL}.BTCUSDT':
+                # print(data)
                 if data.get('data')[0].get('confirm'):
                     data = data.get('data')[0]
 

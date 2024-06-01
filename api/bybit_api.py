@@ -17,7 +17,7 @@ SETTINGS
 """
 
 
-IF_TEST = 0
+IF_TEST = 1
 
 MAIN_URL = None
 
